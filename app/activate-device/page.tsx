@@ -1,50 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/components/card";
 import Button from "@/components/button";
 import Input from "@/components/input";
 import SectionWrapper from "@/components/section-wrapper";
-import { VALID_MAC, VALID_KEY } from "@/lib/mock-data";
-import { saveSession } from "@/lib/auth";
+import Spinner from "@/components/spinner";
+import { registerDevice } from "@/lib/api";
+import type { ApiError } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function ActivateDevicePage() {
   const router = useRouter();
+  const { login, isAuthenticated } = useAuth();
   const [mac, setMac] = useState("");
   const [key, setKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, router]);
+
+  if (isAuthenticated) {
+    return (
+      <SectionWrapper>
+        <div className="flex items-center justify-center py-20">
+          <Spinner size="lg" />
+        </div>
+      </SectionWrapper>
+    );
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    if (!mac.trim() || !key.trim()) {
+    const trimmedMac = mac.trim().toUpperCase();
+    const trimmedKey = key.trim();
+
+    if (!trimmedMac || !trimmedKey) {
       setError("Please enter both MAC Address and Device Key.");
       return;
     }
 
-    if (!/^\d+$/.test(key)) {
+    if (!/^\d+$/.test(trimmedKey)) {
       setError("Device Key must contain numbers only.");
       return;
     }
 
     setLoading(true);
 
-    // Mock validation with delay
-    setTimeout(() => {
-      if (
-        mac.trim().toUpperCase() === VALID_MAC.toUpperCase() &&
-        key.trim() === VALID_KEY
-      ) {
-        saveSession({ mac: mac.trim().toUpperCase(), key: key.trim(), loggedIn: true });
-        router.push("/dashboard");
-      } else {
-        setError("Invalid MAC Address or Device Key. Please try again.");
-        setLoading(false);
-      }
-    }, 800);
+    try {
+      await registerDevice(trimmedMac, trimmedKey);
+      login({ mac_address: trimmedMac, device_key: trimmedKey });
+    } catch (err: unknown) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -55,7 +74,7 @@ export default function ActivateDevicePage() {
             <Input
               label="MAC Address"
               name="mac"
-              placeholder="00:1A:2B:3C:4D"
+              placeholder="AA:BB:CC:DD:EE:FF"
               value={mac}
               onChange={(e) => setMac(e.target.value)}
             />
@@ -74,7 +93,14 @@ export default function ActivateDevicePage() {
             )}
 
             <Button type="submit" disabled={loading} className="mt-2 w-full py-4">
-              {loading ? "Logging in..." : "Login"}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" className="text-white" />
+                  Logging in...
+                </span>
+              ) : (
+                "Login"
+              )}
             </Button>
           </form>
 

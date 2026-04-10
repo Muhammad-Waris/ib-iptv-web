@@ -1,9 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
-const NAV_LINKS = [
+const SESSION_KEY = "iptv_session";
+
+function subscribe(cb: () => void) {
+  window.addEventListener("storage", cb);
+  return () => window.removeEventListener("storage", cb);
+}
+
+function getSnapshot() {
+  return localStorage.getItem(SESSION_KEY) !== null;
+}
+
+function getServerSnapshot() {
+  return false;
+}
+
+const PUBLIC_LINKS = [
   { href: "/", label: "Home" },
   { href: "/activate-device", label: "Activate Device" },
   { href: "/download", label: "Download" },
@@ -11,8 +26,19 @@ const NAV_LINKS = [
   { href: "/contact", label: "Contact" },
 ];
 
+const AUTH_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/manage-playlist", label: "Playlist" },
+  { href: "/download", label: "Download" },
+  { href: "/contact", label: "Contact" },
+];
+
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isLoggedIn = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  const links = isLoggedIn ? AUTH_LINKS : PUBLIC_LINKS;
 
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
@@ -23,7 +49,7 @@ export default function Navbar() {
 
         {/* Desktop links */}
         <div className="hidden items-center gap-1 md:flex">
-          {NAV_LINKS.map((link) => (
+          {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -60,7 +86,7 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="border-t border-border md:hidden">
           <div className="flex flex-col gap-1 px-4 py-3">
-            {NAV_LINKS.map((link) => (
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}

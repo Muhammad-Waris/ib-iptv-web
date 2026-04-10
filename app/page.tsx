@@ -84,11 +84,11 @@ export default function Home() {
                 ))}
               </ul>
               <Button
-                href="/activate-device"
+                href={plan.name === "Lifetime" ? "/checkout?plan=lifetime" : plan.name === "1 Year" ? "/checkout?plan=yearly" : "/checkout?plan=trial"}
                 variant={plan.highlighted ? "primary" : "outline"}
                 className="mt-8 w-full"
               >
-                Get Started
+                {plan.price === "Free" ? "Start Free Trial" : "Get Started"}
               </Button>
             </Card>
           ))}

@@ -1,34 +1,3 @@
-export interface UserSession {
-  mac: string;
-  key: string;
-  loggedIn: boolean;
-}
-
-export interface Subscription {
-  status: "Trial" | "Active" | "Expired";
-  plan: "Trial" | "1 Year" | "Lifetime";
-  expiryDate: string;
-  trialDaysRemaining: number;
-}
-
-export interface Playlist {
-  type: "m3u" | "xtream";
-  url?: string;
-  username?: string;
-  password?: string;
-  serverUrl?: string;
-}
-
-export const VALID_MAC = "00:1A:2B:3C:4D";
-export const VALID_KEY = "123456";
-
-export const DEFAULT_SUBSCRIPTION: Subscription = {
-  status: "Trial",
-  plan: "Trial",
-  expiryDate: "2026-04-07",
-  trialDaysRemaining: 7,
-};
-
 export const PRICING_PLANS = [
   {
     name: "7 Days Free Trial",
