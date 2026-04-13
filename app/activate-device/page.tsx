@@ -48,8 +48,8 @@ export default function ActivateDevicePage() {
       return;
     }
 
-    if (!/^\d+$/.test(trimmedKey)) {
-      setError("Device Key must contain numbers only.");
+    if (!/^[A-Za-z0-9]+$/.test(trimmedKey)) {
+      setError("Invalid Device Key format.");
       return;
     }
 

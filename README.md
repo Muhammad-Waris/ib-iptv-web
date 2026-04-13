@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IBO Pro Smarters — IPTV Web
 
-## Getting Started
+Live at **[www.iboprosmarters.com](https://www.iboprosmarters.com)**
 
-First, run the development server:
+---
+
+## 🏗️ Project Architecture & Deployment Summary
+
+### 1. Backend (Brain)
+
+| Detail     | Value                                                      |
+| ---------- | ---------------------------------------------------------- |
+| Technology | NestJS (Node.js) with TypeORM / Prisma                     |
+| Host       | DigitalOcean App Platform (`lobster-app`)                   |
+| Region     | Bangalore (BLR1)                                            |
+| Live URL   | `https://lobster-app-difq8.ondigitalocean.app`              |
+| Port       | 3000 (Internal & Public)                                    |
+
+Key Logic: Uses `DATABASE_URL` for production, falls back to local settings for development.
+
+### 2. Database (Memory)
+
+| Detail            | Value                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Technology        | PostgreSQL on **Supabase**                                                                                |
+| Connection Method | IPv4 Connection Pooler (Port 6543)                                                                        |
+| Connection String | `postgresql://postgres.[ID]:[PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true` |
+
+> **Why Port 6543?** Fixed the `EHOSTUNREACH` error by providing a stable IPv4 route from DigitalOcean to Supabase.
+
+### 3. Frontend Website (Face)
+
+| Detail               | Value                                          |
+| -------------------- | ---------------------------------------------- |
+| Technology           | Next.js (App Router, TypeScript, Tailwind CSS)  |
+| Host                 | **Vercel**                                      |
+| Domain               | `www.iboprosmarters.com`                        |
+| Environment Variable | `NEXT_PUBLIC_API_URL` → DigitalOcean backend URL |
+
+### 4. Mobile App (Hands)
+
+| Detail         | Value                                              |
+| -------------- | -------------------------------------------------- |
+| Technology     | **Flutter**                                         |
+| Production URL | `https://lobster-app-difq8.ondigitalocean.app`      |
+| Optimizations  | HTTPS enforced, 10s timeout, split-ABI APKs         |
+
+---
+
+## Getting Started (Local Development)
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server starts on [http://localhost:3001](http://localhost:3001). API requests are proxied to `http://localhost:3000` via Next.js rewrites (see `next.config.ts`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file:
 
-## Learn More
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+For production (Vercel), set `NEXT_PUBLIC_API_URL` to the DigitalOcean backend URL.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+app/                  # Next.js App Router pages
+  layout.tsx          # Root layout (dark theme)
+  page.tsx            # Homepage with hero, features, pricing
+  activate-device/    # Device login (MAC + key)
+  dashboard/          # Subscription status, playlist, plan cards
+  manage-playlist/    # Add/edit M3U or Xtream Codes playlist
+  download/           # App download + installation guides
+  checkout/           # Plan selection + payment flow
+  how-to-activate/    # Activation instructions
+  how-to-add-playlist/# Playlist setup guide
+  contact/            # Support contact page
+components/           # Reusable UI components
+hooks/                # Custom React hooks (useAuth)
+lib/                  # API client, auth helpers
+types/                # TypeScript type definitions
+public/               # Static assets
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deployment
+
+- **Frontend:** Auto-deploys to Vercel on push to `main`.
+- **Backend:** Auto-deploys to DigitalOcean App Platform on push.
+- **Database:** Managed by Supabase (no deployment needed).
+- **Billing:** Backend runs on DigitalOcean $5/month plan.
