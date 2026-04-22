@@ -213,8 +213,7 @@ function ManagePlaylistContent() {
                     {playlist.type && (
                       <button
                         type="button"
-                        onClick={() => switchTab(playlist.type)}
-                        className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-white"
+onClick={() => switchTab(playlist.type!)}                        className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-white"
                       >
                         Edit
                       </button>
