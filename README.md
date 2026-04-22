@@ -1,6 +1,4 @@
-# IBO Pro Smarters — IPTV Web
-
-Live at **[www.iboprosmarters.com](https://www.iboprosmarters.com)**
+# IPTV Web Frontend
 
 ---
 
@@ -34,7 +32,7 @@ Key Logic: Uses `DATABASE_URL` for production, falls back to local settings for 
 | -------------------- | ---------------------------------------------- |
 | Technology           | Next.js (App Router, TypeScript, Tailwind CSS)  |
 | Host                 | **Vercel**                                      |
-| Domain               | `www.iboprosmarters.com`                        |
+| Domain               | Vercel-managed custom domain                   |
 | Environment Variable | `NEXT_PUBLIC_API_URL` → DigitalOcean backend URL |
 
 ### 4. Mobile App (Hands)
@@ -73,12 +71,12 @@ For production (Vercel), set `NEXT_PUBLIC_API_URL` to the DigitalOcean backend U
 ```
 app/                  # Next.js App Router pages
   layout.tsx          # Root layout (dark theme)
-  page.tsx            # Homepage with hero, features, pricing
+  page.tsx            # Homepage with hero, trust sections, and pricing
   activate-device/    # Device login (MAC + key)
   dashboard/          # Subscription status, playlist, plan cards
   manage-playlist/    # Add/edit M3U or Xtream Codes playlist
   download/           # App download + installation guides
-  checkout/           # Plan selection + payment flow
+  checkout/           # Manual plan/contact flow (future-ready for payments)
   how-to-activate/    # Activation instructions
   how-to-add-playlist/# Playlist setup guide
   contact/            # Support contact page
@@ -96,4 +94,4 @@ public/               # Static assets
 - **Frontend:** Auto-deploys to Vercel on push to `main`.
 - **Backend:** Auto-deploys to DigitalOcean App Platform on push.
 - **Database:** Managed by Supabase (no deployment needed).
-- **Billing:** Backend runs on DigitalOcean $5/month plan.
+- **Billing:** Manual support flow for now; online payments can be integrated later.

@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IPTV Player - Stream Smarter, Watch Better",
+  title: "IPTV Media Player - Device Activation and Playlist Management",
   description:
-    "Activate your IPTV device, manage playlists, and enjoy seamless streaming on any device.",
+    "Activate your media player device, manage playlists from the web, and set up streaming on Android TV, Firestick, Samsung TV, and Windows.",
 };
 
 export default function RootLayout({

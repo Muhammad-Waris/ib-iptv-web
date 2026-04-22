@@ -22,16 +22,16 @@ const PUBLIC_LINKS = [
   { href: "/", label: "Home" },
   { href: "/activate-device", label: "Activate Device" },
   { href: "/download", label: "Download" },
-  { href: "/how-to-activate", label: "How To" },
-  { href: "/contact", label: "Contact" },
+  { href: "/how-to-activate", label: "How It Works" },
+  { href: "/contact", label: "Support" },
 ];
 
 const AUTH_LINKS = [
   { href: "/", label: "Home" },
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/manage-playlist", label: "Playlist" },
+  { href: "/manage-playlist", label: "Manage Playlist" },
   { href: "/download", label: "Download" },
-  { href: "/contact", label: "Contact" },
+  { href: "/contact", label: "Support" },
 ];
 
 export default function Navbar() {
@@ -44,7 +44,7 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
         <Link href="/" className="text-xl font-bold tracking-tight text-white">
-          IPTV<span className="text-primary">Player</span>
+          IPTV<span className="text-primary">Media</span>
         </Link>
 
         {/* Desktop links */}

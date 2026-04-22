@@ -14,12 +14,17 @@ export interface DeviceStatus {
   days_remaining: number;
 }
 
+export type PlaylistType = "m3u" | "xtream";
+
 export interface PlaylistData {
-  type?: "m3u" | "xtream";
+  id?: string;
+  device_id?: string;
+  type?: PlaylistType;
   m3u_url?: string;
   xtream_username?: string;
   xtream_password?: string;
   xtream_base_url?: string;
+  created_at?: string;
 }
 
 export interface ApiError {

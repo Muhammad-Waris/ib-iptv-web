@@ -1,4 +1,9 @@
-import type { DeviceStatus, PlaylistData, PlaylistPayload, ApiError } from "@/types";
+import type {
+  DeviceStatus,
+  PlaylistData,
+  PlaylistPayload,
+  ApiError,
+} from "@/types";
 
 export type { DeviceStatus, PlaylistData, ApiError };
 
@@ -79,15 +84,22 @@ export function addPlaylist(
   });
 }
 
-/** Get current playlist for a device */
-export async function getPlaylist(mac: string): Promise<PlaylistData | null> {
+/** Get all playlists for a device */
+export async function getPlaylists(mac: string): Promise<PlaylistData[]> {
   const data = await request<PlaylistData | PlaylistData[] | null>(
     `/playlist?mac=${encodeURIComponent(mac)}`
   );
   if (Array.isArray(data)) {
-    return data.length > 0 ? data[0] : null;
+    return data;
   }
-  return data;
+
+  return data ? [data] : [];
+}
+
+/** Get the first playlist for views that only need one result */
+export async function getPlaylist(mac: string): Promise<PlaylistData | null> {
+  const playlists = await getPlaylists(mac);
+  return playlists.length > 0 ? playlists[0] : null;
 }
 
 /** Activate a subscription plan */

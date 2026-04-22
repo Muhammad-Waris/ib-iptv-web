@@ -1,11 +1,12 @@
 import Link from "next/link";
 
 const FOOTER_LINKS = [
+  { href: "/", label: "Home" },
   { href: "/activate-device", label: "Activate Device" },
   { href: "/download", label: "Download" },
   { href: "/how-to-activate", label: "How to Activate" },
   { href: "/how-to-add-playlist", label: "How to Add Playlist" },
-  { href: "/contact", label: "Contact" },
+  { href: "/contact", label: "Support / Contact" },
 ];
 
 export default function Footer() {
@@ -16,10 +17,10 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <Link href="/" className="text-xl font-bold tracking-tight text-white">
-              IPTV<span className="text-primary">Player</span>
+              IPTV<span className="text-primary">Media</span>
             </Link>
             <p className="mt-3 text-sm text-muted">
-              Stream smarter with fast device activation and seamless playlist management.
+              A media player website for fast device activation, playlist management, and setup help across supported devices.
             </p>
           </div>
 
@@ -45,17 +46,24 @@ export default function Footer() {
           {/* Legal */}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-white">
-              Legal
+              Legal Disclaimer
             </h3>
             <p className="text-sm text-muted">
-              IPTV Player is a media player application only. We do not provide, host, or
-              distribute any media content. Users are solely responsible for the content they access.
+              This product is a media player and playlist manager only. It does not provide,
+              host, or distribute channels, playlists, or media content. Users are responsible
+              for the playlists and content they choose to use.
             </p>
+            <Link
+              href="/contact"
+              className="mt-4 inline-block text-sm font-medium text-primary transition-colors hover:text-primary-hover"
+            >
+              Contact support
+            </Link>
           </div>
         </div>
 
         <div className="mt-10 border-t border-border pt-6 text-center text-sm text-muted">
-          © {new Date().getFullYear()} IPTV Player. All rights reserved.
+          © {new Date().getFullYear()} IPTV Media Player. All rights reserved.
         </div>
       </div>
     </footer>

@@ -11,10 +11,10 @@ import ErrorMessage from "@/components/error-message";
 import AuthGuard from "@/components/auth-guard";
 import CopyButton from "@/components/copy-button";
 import { useAuth } from "@/hooks/useAuth";
-import { addPlaylist, getPlaylist } from "@/lib/api";
-import type { PlaylistData, ApiError } from "@/types";
+import { addPlaylist, getPlaylists } from "@/lib/api";
+import type { PlaylistData, ApiError, PlaylistType } from "@/types";
 
-type Tab = "m3u" | "xtream";
+type Tab = PlaylistType;
 
 function ManagePlaylistContent() {
   const { session } = useAuth(true);
@@ -30,7 +30,7 @@ function ManagePlaylistContent() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [currentPlaylist, setCurrentPlaylist] = useState<PlaylistData | null>(null);
+  const [playlists, setPlaylists] = useState<PlaylistData[]>([]);
   const [playlistLoading, setPlaylistLoading] = useState(true);
   const [playlistError, setPlaylistError] = useState("");
 
@@ -38,19 +38,24 @@ function ManagePlaylistContent() {
     if (!session) return;
     setPlaylistLoading(true);
     setPlaylistError("");
-    getPlaylist(session.mac_address)
+
+    getPlaylists(session.mac_address)
       .then((data) => {
-        setCurrentPlaylist(data);
-        if (data && data.type) {
-          if (data.type === "m3u" && data.m3u_url) {
-            setActiveTab("m3u");
-            setM3uUrl(data.m3u_url);
-          } else if (data.type === "xtream") {
-            setActiveTab("xtream");
-            setXtreamUsername(data.xtream_username ?? "");
-            setXtreamPassword(data.xtream_password ?? "");
-            setXtreamServer(data.xtream_base_url ?? "");
-          }
+        setPlaylists(data);
+
+        const first = data[0];
+        if (!first?.type) return;
+
+        if (first.type === "m3u" && first.m3u_url) {
+          setActiveTab("m3u");
+          setM3uUrl(first.m3u_url);
+        }
+
+        if (first.type === "xtream") {
+          setActiveTab("xtream");
+          setXtreamUsername(first.xtream_username ?? "");
+          setXtreamPassword(first.xtream_password ?? "");
+          setXtreamServer(first.xtream_base_url ?? "");
         }
       })
       .catch((err: unknown) => {
@@ -59,6 +64,25 @@ function ManagePlaylistContent() {
       })
       .finally(() => setPlaylistLoading(false));
   }, [session]);
+
+  const currentPlaylist = playlists.find((item) => item.type === activeTab) ?? null;
+  const hasExistingOfType = !!currentPlaylist;
+
+  function switchTab(tab: Tab) {
+    setActiveTab(tab);
+    setFieldErrors({});
+
+    const selected = playlists.find((item) => item.type === tab);
+    if (!selected) return;
+
+    if (tab === "m3u") {
+      setM3uUrl(selected.m3u_url ?? "");
+    } else {
+      setXtreamUsername(selected.xtream_username ?? "");
+      setXtreamPassword(selected.xtream_password ?? "");
+      setXtreamServer(selected.xtream_base_url ?? "");
+    }
+  }
 
   function validate(): boolean {
     const errors: Record<string, string> = {};
@@ -91,6 +115,12 @@ function ManagePlaylistContent() {
     return Object.keys(errors).length === 0;
   }
 
+  async function refreshPlaylists() {
+    if (!session) return;
+    const updated = await getPlaylists(session.mac_address).catch(() => []);
+    setPlaylists(updated);
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!session) return;
@@ -116,10 +146,14 @@ function ManagePlaylistContent() {
           xtream_base_url: xtreamServer.trim(),
         });
       }
-      setSuccess("Playlist saved successfully!");
+
+      setSuccess(
+        hasExistingOfType
+          ? `Your ${activeTab.toUpperCase()} playlist has been updated successfully.`
+          : `Your ${activeTab.toUpperCase()} playlist has been saved successfully.`
+      );
       setFieldErrors({});
-      const updated = await getPlaylist(session.mac_address).catch(() => null);
-      setCurrentPlaylist(updated);
+      await refreshPlaylists();
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       setError(apiErr.message || "Failed to save playlist. Please try again.");
@@ -131,61 +165,101 @@ function ManagePlaylistContent() {
   if (!session) return null;
 
   return (
-    <SectionWrapper title="Manage Playlist" subtitle="Add your M3U URL or Xtream Codes credentials.">
-      <div className="mx-auto max-w-lg space-y-6">
-        {/* Current Playlist Info */}
+    <SectionWrapper
+      title="Manage Playlist"
+      subtitle="Add your own M3U URL or Xtream Codes details and manage them from the website."
+    >
+      <div className="mx-auto max-w-3xl space-y-6">
         {playlistLoading ? (
           <Card>
             <div className="flex items-center gap-3">
               <Spinner size="sm" />
-              <p className="text-sm text-muted">Loading current playlist...</p>
+              <p className="text-sm text-muted">Loading current playlists...</p>
             </div>
           </Card>
         ) : playlistError ? (
           <ErrorMessage message={playlistError} />
-        ) : currentPlaylist && currentPlaylist.type ? (
+        ) : playlists.length > 0 ? (
           <Card>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">Current Playlist</h3>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Saved Playlists</h3>
+                <p className="mt-1 text-xs text-muted">
+                  If your backend returns more than one saved playlist, each type is shown here.
+                </p>
+              </div>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {currentPlaylist.type.toUpperCase()}
+                {playlists.length} saved
               </span>
             </div>
-            <div className="mt-3 space-y-2">
-              {currentPlaylist.type === "m3u" && currentPlaylist.m3u_url && (
-                <div className="flex items-start justify-between gap-2 rounded-lg bg-background px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted">URL</p>
-                    <p className="text-sm text-white break-all">{currentPlaylist.m3u_url}</p>
+
+            <div className="mt-4 grid gap-3">
+              {playlists.map((playlist, index) => (
+                <div
+                  key={playlist.id ?? `${playlist.type}-${index}`}
+                  className="rounded-xl border border-border bg-background/70 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {playlist.type?.toUpperCase() ?? "Playlist"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {playlist.type === activeTab
+                          ? "Currently selected in the editor below."
+                          : "Saved on this device."}
+                      </p>
+                    </div>
+                    {playlist.type && (
+                      <button
+                        type="button"
+                        onClick={() => switchTab(playlist.type)}
+                        className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-white"
+                      >
+                        Edit
+                      </button>
+                    )}
                   </div>
-                  <CopyButton value={currentPlaylist.m3u_url} label="URL" className="shrink-0 mt-3" />
+
+                  <div className="mt-3 space-y-2">
+                    {playlist.type === "m3u" && playlist.m3u_url && (
+                      <div className="flex items-start justify-between gap-2 rounded-lg bg-surface px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted">Playlist URL</p>
+                          <p className="text-sm text-white break-all">{playlist.m3u_url}</p>
+                        </div>
+                        <CopyButton value={playlist.m3u_url} label="URL" className="mt-3 shrink-0" />
+                      </div>
+                    )}
+
+                    {playlist.type === "xtream" && (
+                      <>
+                        {playlist.xtream_username && (
+                          <div className="flex items-center justify-between gap-2 rounded-lg bg-surface px-3 py-2">
+                            <div>
+                              <p className="text-xs text-muted">Username</p>
+                              <p className="text-sm text-white">{playlist.xtream_username}</p>
+                            </div>
+                            <CopyButton value={playlist.xtream_username} label="Username" />
+                          </div>
+                        )}
+                        {playlist.xtream_base_url && (
+                          <div className="flex items-start justify-between gap-2 rounded-lg bg-surface px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-xs text-muted">Server</p>
+                              <p className="text-sm text-white break-all">{playlist.xtream_base_url}</p>
+                            </div>
+                            <CopyButton value={playlist.xtream_base_url} label="Server" className="mt-3 shrink-0" />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              )}
-              {currentPlaylist.type === "xtream" && (
-                <>
-                  {currentPlaylist.xtream_username && (
-                    <div className="flex items-center justify-between gap-2 rounded-lg bg-background px-3 py-2">
-                      <div>
-                        <p className="text-xs text-muted">Username</p>
-                        <p className="text-sm text-white">{currentPlaylist.xtream_username}</p>
-                      </div>
-                      <CopyButton value={currentPlaylist.xtream_username} label="Username" />
-                    </div>
-                  )}
-                  {currentPlaylist.xtream_base_url && (
-                    <div className="flex items-start justify-between gap-2 rounded-lg bg-background px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted">Server</p>
-                        <p className="text-sm text-white break-all">{currentPlaylist.xtream_base_url}</p>
-                      </div>
-                      <CopyButton value={currentPlaylist.xtream_base_url} label="Server" className="shrink-0 mt-3" />
-                    </div>
-                  )}
-                </>
-              )}
+              ))}
             </div>
           </Card>
-        ) : !playlistLoading ? (
+        ) : (
           <Card>
             <div className="flex flex-col items-center gap-3 py-2 text-center">
               <svg className="h-8 w-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -195,29 +269,31 @@ function ManagePlaylistContent() {
               <p className="text-xs text-muted">Use the form below to add your first playlist.</p>
             </div>
           </Card>
-        ) : null}
+        )}
 
         <Card>
-          {/* Tabs */}
+          <div className="mb-5 rounded-xl border border-primary/20 bg-primary/10 p-4">
+            <h3 className="text-sm font-semibold text-white">Add your own playlist</h3>
+            <p className="mt-2 text-sm leading-7 text-muted">
+              Choose the format provided by your playlist source. You can save an M3U URL or Xtream Codes credentials.
+            </p>
+          </div>
+
           <div className="mb-6 flex rounded-xl bg-background p-1">
             <button
               type="button"
-              onClick={() => { setActiveTab("m3u"); setFieldErrors({}); }}
+              onClick={() => switchTab("m3u")}
               className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "m3u"
-                  ? "bg-primary text-white"
-                  : "text-muted hover:text-white"
+                activeTab === "m3u" ? "bg-primary text-white" : "text-muted hover:text-white"
               }`}
             >
               M3U Playlist
             </button>
             <button
               type="button"
-              onClick={() => { setActiveTab("xtream"); setFieldErrors({}); }}
+              onClick={() => switchTab("xtream")}
               className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "xtream"
-                  ? "bg-primary text-white"
-                  : "text-muted hover:text-white"
+                activeTab === "xtream" ? "bg-primary text-white" : "text-muted hover:text-white"
               }`}
             >
               Xtream Codes
@@ -232,8 +308,14 @@ function ManagePlaylistContent() {
                   name="m3uUrl"
                   placeholder="http://example.com/playlist.m3u"
                   value={m3uUrl}
-                  onChange={(e) => { setM3uUrl(e.target.value); setFieldErrors((p) => ({ ...p, m3uUrl: "" })); }}
+                  onChange={(e) => {
+                    setM3uUrl(e.target.value);
+                    setFieldErrors((previous) => ({ ...previous, m3uUrl: "" }));
+                  }}
                 />
+                <p className="mt-2 text-xs leading-6 text-muted">
+                  Paste the direct M3U or M3U8 playlist URL supplied by your provider.
+                </p>
                 {fieldErrors.m3uUrl && (
                   <p className="mt-1 text-xs text-red-400">{fieldErrors.m3uUrl}</p>
                 )}
@@ -246,12 +328,19 @@ function ManagePlaylistContent() {
                     name="xtreamUsername"
                     placeholder="your_username"
                     value={xtreamUsername}
-                    onChange={(e) => { setXtreamUsername(e.target.value); setFieldErrors((p) => ({ ...p, xtreamUsername: "" })); }}
+                    onChange={(e) => {
+                      setXtreamUsername(e.target.value);
+                      setFieldErrors((previous) => ({ ...previous, xtreamUsername: "" }));
+                    }}
                   />
+                  <p className="mt-2 text-xs leading-6 text-muted">
+                    Enter the Xtream username exactly as provided.
+                  </p>
                   {fieldErrors.xtreamUsername && (
                     <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamUsername}</p>
                   )}
                 </div>
+
                 <div>
                   <Input
                     label="Password"
@@ -259,20 +348,33 @@ function ManagePlaylistContent() {
                     type="password"
                     placeholder="your_password"
                     value={xtreamPassword}
-                    onChange={(e) => { setXtreamPassword(e.target.value); setFieldErrors((p) => ({ ...p, xtreamPassword: "" })); }}
+                    onChange={(e) => {
+                      setXtreamPassword(e.target.value);
+                      setFieldErrors((previous) => ({ ...previous, xtreamPassword: "" }));
+                    }}
                   />
+                  <p className="mt-2 text-xs leading-6 text-muted">
+                    Passwords are only used to store the playlist details you choose to save.
+                  </p>
                   {fieldErrors.xtreamPassword && (
                     <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamPassword}</p>
                   )}
                 </div>
+
                 <div>
                   <Input
                     label="Server URL"
                     name="xtreamServer"
                     placeholder="http://example.com:8080"
                     value={xtreamServer}
-                    onChange={(e) => { setXtreamServer(e.target.value); setFieldErrors((p) => ({ ...p, xtreamServer: "" })); }}
+                    onChange={(e) => {
+                      setXtreamServer(e.target.value);
+                      setFieldErrors((previous) => ({ ...previous, xtreamServer: "" }));
+                    }}
                   />
+                  <p className="mt-2 text-xs leading-6 text-muted">
+                    Include the full server address, for example <span className="text-white">http://example.com:8080</span>.
+                  </p>
                   {fieldErrors.xtreamServer && (
                     <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamServer}</p>
                   )}
@@ -288,13 +390,19 @@ function ManagePlaylistContent() {
               <Toast message={error} type="error" onClose={() => setError("")} />
             )}
 
+            <div className="rounded-xl border border-border bg-background/60 px-4 py-3 text-sm text-muted">
+              {hasExistingOfType
+                ? `You already have a saved ${activeTab.toUpperCase()} playlist. Saving this form will update it.`
+                : `No ${activeTab.toUpperCase()} playlist is saved yet for this device.`}
+            </div>
+
             <Button type="submit" disabled={saving} className="w-full py-4">
               {saving ? (
                 <span className="flex items-center justify-center gap-2">
                   <Spinner size="sm" className="text-white" />
                   Saving...
                 </span>
-              ) : currentPlaylist && currentPlaylist.type ? (
+              ) : hasExistingOfType ? (
                 "Update Playlist"
               ) : (
                 "Save Playlist"
