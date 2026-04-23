@@ -7,7 +7,10 @@ import type {
 
 export type { DeviceStatus, PlaylistData, ApiError };
 
-const BASE_URL = "/api";
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ?? "";
+
+const FALLBACK_ERROR = "Something went wrong. Please try again.";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -15,20 +18,36 @@ async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
+  if (!API_BASE_URL) {
+    const err: ApiError = {
+      message: "API URL is not configured. Please try again later.",
+      statusCode: 500,
+    };
+    throw err;
+  }
+
+  const url = `${API_BASE_URL}${path}`;
+  const { headers, ...requestOptions } = options ?? {};
+  const requestHeaders = new Headers(headers);
+  if (!requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
+    ...requestOptions,
+    headers: requestHeaders,
   });
 
   if (!res.ok) {
-    let message = "Something went wrong. Please try again.";
+    let message = FALLBACK_ERROR;
     try {
       const body = await res.json();
       if (typeof body.message === "string") {
         message = body.message;
       } else if (Array.isArray(body.message)) {
         message = body.message.join(". ");
+      } else if (typeof body.error === "string") {
+        message = body.error;
       }
     } catch {
       // ignore parse errors
