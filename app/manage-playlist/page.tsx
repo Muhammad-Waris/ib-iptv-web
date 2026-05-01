@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Card from "@/components/card";
 import Button from "@/components/button";
 import Input from "@/components/input";
@@ -11,21 +11,106 @@ import ErrorMessage from "@/components/error-message";
 import AuthGuard from "@/components/auth-guard";
 import CopyButton from "@/components/copy-button";
 import { useAuth } from "@/hooks/useAuth";
-import { addPlaylist, getPlaylists } from "@/lib/api";
-import type { PlaylistData, ApiError, PlaylistType } from "@/types";
+import {
+  activatePlaylist,
+  addPlaylist,
+  deletePlaylist,
+  getPlaylists,
+  isActivePlaylist,
+  updatePlaylist,
+  type PlaylistId,
+} from "@/lib/api";
+import type { PlaylistData, ApiError, PlaylistPayload, PlaylistType } from "@/types";
 
-type Tab = PlaylistType;
+type FormMode = "add" | "edit";
+
+interface PlaylistForm {
+  name: string;
+  type: PlaylistType;
+  m3uUrl: string;
+  xtreamBaseUrl: string;
+  xtreamUsername: string;
+  xtreamPassword: string;
+}
+
+const actionButtonClass =
+  "inline-flex items-center justify-center rounded-lg border border-border px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-surface-light disabled:pointer-events-none disabled:opacity-50";
+
+const dangerButtonClass =
+  "inline-flex items-center justify-center rounded-lg border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50";
+
+function createEmptyForm(type: PlaylistType = "m3u"): PlaylistForm {
+  return {
+    name: "",
+    type,
+    m3uUrl: "",
+    xtreamBaseUrl: "",
+    xtreamUsername: "",
+    xtreamPassword: "",
+  };
+}
+
+function getPlaylistId(playlist: PlaylistData): PlaylistId | null {
+  return playlist.id ?? playlist._id ?? playlist.playlist_id ?? null;
+}
+
+function getPlaylistName(playlist: PlaylistData, index?: number): string {
+  return (
+    playlist.name ??
+    playlist.title ??
+    playlist.playlist_name ??
+    `${playlist.type?.toUpperCase() ?? "Playlist"}${index != null ? ` ${index + 1}` : ""}`
+  );
+}
+
+function getLastUpdated(playlist: PlaylistData): string | undefined {
+  return playlist.updated_at ?? playlist.last_updated ?? playlist.created_at;
+}
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return "Not available";
+
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function buildPayload(form: PlaylistForm): PlaylistPayload {
+  const name = form.name.trim();
+
+  if (form.type === "m3u") {
+    return {
+      type: "m3u",
+      name,
+      m3u_url: form.m3uUrl.trim(),
+    };
+  }
+
+  return {
+    type: "xtream",
+    name,
+    xtream_base_url: form.xtreamBaseUrl.trim(),
+    xtream_username: form.xtreamUsername.trim(),
+    xtream_password: form.xtreamPassword.trim(),
+  };
+}
 
 function ManagePlaylistContent() {
   const { session } = useAuth(true);
 
-  const [activeTab, setActiveTab] = useState<Tab>("m3u");
-  const [m3uUrl, setM3uUrl] = useState("");
-  const [xtreamUsername, setXtreamUsername] = useState("");
-  const [xtreamPassword, setXtreamPassword] = useState("");
-  const [xtreamServer, setXtreamServer] = useState("");
+  const [form, setForm] = useState<PlaylistForm>(() => createEmptyForm());
+  const [mode, setMode] = useState<FormMode>("add");
+  const [editingPlaylistId, setEditingPlaylistId] = useState<PlaylistId | null>(null);
 
   const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -34,80 +119,116 @@ function ManagePlaylistContent() {
   const [playlistLoading, setPlaylistLoading] = useState(true);
   const [playlistError, setPlaylistError] = useState("");
 
+  const loadPlaylists = useCallback(
+    async (showLoading = false) => {
+      if (!session) return [];
+
+      if (showLoading) {
+        setPlaylistLoading(true);
+      }
+      setPlaylistError("");
+
+      try {
+        const data = await getPlaylists(session.mac_address);
+        setPlaylists(data);
+        return data;
+      } catch (err: unknown) {
+        const apiErr = err as ApiError;
+        setPlaylistError(apiErr.message || "Failed to load playlists.");
+        return [];
+      } finally {
+        if (showLoading) {
+          setPlaylistLoading(false);
+        }
+      }
+    },
+    [session]
+  );
+
   useEffect(() => {
     if (!session) return;
-    setPlaylistLoading(true);
-    setPlaylistError("");
+    void loadPlaylists(true);
+  }, [session, loadPlaylists]);
 
-    getPlaylists(session.mac_address)
-      .then((data) => {
-        setPlaylists(data);
+  const activePlaylist = useMemo(
+    () => playlists.find(isActivePlaylist) ?? null,
+    [playlists]
+  );
 
-        const first = data[0];
-        if (!first?.type) return;
+  function updateFormField(field: keyof PlaylistForm, value: string) {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setFieldErrors((previous) => ({ ...previous, [field]: "" }));
+  }
 
-        if (first.type === "m3u" && first.m3u_url) {
-          setActiveTab("m3u");
-          setM3uUrl(first.m3u_url);
-        }
-
-        if (first.type === "xtream") {
-          setActiveTab("xtream");
-          setXtreamUsername(first.xtream_username ?? "");
-          setXtreamPassword(first.xtream_password ?? "");
-          setXtreamServer(first.xtream_base_url ?? "");
-        }
-      })
-      .catch((err: unknown) => {
-        const apiErr = err as ApiError;
-        setPlaylistError(apiErr.message || "Failed to load playlist.");
-      })
-      .finally(() => setPlaylistLoading(false));
-  }, [session]);
-
-  const currentPlaylist = playlists.find((item) => item.type === activeTab) ?? null;
-  const hasExistingOfType = !!currentPlaylist;
-
-  function switchTab(tab: Tab) {
-    setActiveTab(tab);
+  function startAdd(type: PlaylistType = form.type) {
+    setMode("add");
+    setEditingPlaylistId(null);
+    setForm(createEmptyForm(type));
     setFieldErrors({});
+    setError("");
+    setSuccess("");
+    document.getElementById("playlist-form")?.scrollIntoView({ behavior: "smooth" });
+  }
 
-    const selected = playlists.find((item) => item.type === tab);
-    if (!selected) return;
-
-    if (tab === "m3u") {
-      setM3uUrl(selected.m3u_url ?? "");
-    } else {
-      setXtreamUsername(selected.xtream_username ?? "");
-      setXtreamPassword(selected.xtream_password ?? "");
-      setXtreamServer(selected.xtream_base_url ?? "");
+  function startEdit(playlist: PlaylistData, index: number) {
+    const playlistId = getPlaylistId(playlist);
+    if (!playlistId) {
+      setError("This playlist cannot be edited because the backend did not return a playlist ID.");
+      setSuccess("");
+      return;
     }
+
+    const type = playlist.type ?? "m3u";
+    setMode("edit");
+    setEditingPlaylistId(playlistId);
+    setForm({
+      name: getPlaylistName(playlist, index),
+      type,
+      m3uUrl: playlist.m3u_url ?? "",
+      xtreamBaseUrl: playlist.xtream_base_url ?? "",
+      xtreamUsername: playlist.xtream_username ?? "",
+      xtreamPassword: playlist.xtream_password ?? "",
+    });
+    setFieldErrors({});
+    setError("");
+    setSuccess("");
+    document.getElementById("playlist-form")?.scrollIntoView({ behavior: "smooth" });
   }
 
   function validate(): boolean {
     const errors: Record<string, string> = {};
 
-    if (activeTab === "m3u") {
-      if (!m3uUrl.trim()) {
-        errors.m3uUrl = "Playlist URL is required.";
+    if (!form.name.trim()) {
+      errors.name = "Playlist name is required.";
+    }
+
+    if (form.type === "m3u") {
+      if (!form.m3uUrl.trim()) {
+        errors.m3uUrl = "M3U URL is required.";
       } else {
         try {
-          new URL(m3uUrl.trim());
+          new URL(form.m3uUrl.trim());
         } catch {
-          errors.m3uUrl = "Please enter a valid URL.";
+          errors.m3uUrl = "Please enter a valid M3U URL.";
         }
       }
     } else {
-      if (!xtreamUsername.trim()) errors.xtreamUsername = "Username is required.";
-      if (!xtreamPassword.trim()) errors.xtreamPassword = "Password is required.";
-      if (!xtreamServer.trim()) {
-        errors.xtreamServer = "Server URL is required.";
+      if (!form.xtreamBaseUrl.trim()) {
+        errors.xtreamBaseUrl = "Server URL is required.";
       } else {
         try {
-          new URL(xtreamServer.trim());
+          new URL(form.xtreamBaseUrl.trim());
         } catch {
-          errors.xtreamServer = "Please enter a valid server URL.";
+          errors.xtreamBaseUrl = "Please enter a valid server URL.";
         }
+      }
+
+      if (!form.xtreamUsername.trim()) {
+        errors.xtreamUsername = "Username is required.";
+      }
+
+      if (!form.xtreamPassword.trim()) {
+        errors.xtreamPassword = "Password is required.";
       }
     }
 
@@ -115,13 +236,7 @@ function ManagePlaylistContent() {
     return Object.keys(errors).length === 0;
   }
 
-  async function refreshPlaylists() {
-    if (!session) return;
-    const updated = await getPlaylists(session.mac_address).catch(() => []);
-    setPlaylists(updated);
-  }
-
-  async function handleSave(e: React.FormEvent) {
+  async function handleSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!session) return;
 
@@ -130,30 +245,34 @@ function ManagePlaylistContent() {
 
     if (!validate()) return;
 
+    if (mode === "edit" && !editingPlaylistId) {
+      setError("Select a saved playlist before updating.");
+      return;
+    }
+
     setSaving(true);
 
     try {
-      if (activeTab === "m3u") {
-        await addPlaylist(session.mac_address, session.device_key, {
-          type: "m3u",
-          m3u_url: m3uUrl.trim(),
-        });
+      const payload = buildPayload(form);
+
+      if (mode === "edit" && editingPlaylistId) {
+        await updatePlaylist(
+          editingPlaylistId,
+          session.mac_address,
+          session.device_key,
+          payload
+        );
+        setSuccess("Playlist updated successfully.");
       } else {
-        await addPlaylist(session.mac_address, session.device_key, {
-          type: "xtream",
-          xtream_username: xtreamUsername.trim(),
-          xtream_password: xtreamPassword.trim(),
-          xtream_base_url: xtreamServer.trim(),
-        });
+        await addPlaylist(session.mac_address, session.device_key, payload);
+        setSuccess("Playlist added successfully.");
+        setMode("add");
+        setEditingPlaylistId(null);
+        setForm(createEmptyForm(form.type));
       }
 
-      setSuccess(
-        hasExistingOfType
-          ? `Your ${activeTab.toUpperCase()} playlist has been updated successfully.`
-          : `Your ${activeTab.toUpperCase()} playlist has been saved successfully.`
-      );
       setFieldErrors({});
-      await refreshPlaylists();
+      await loadPlaylists(false);
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       setError(apiErr.message || "Failed to save playlist. Please try again.");
@@ -162,159 +281,288 @@ function ManagePlaylistContent() {
     }
   }
 
+  async function handleActivate(playlist: PlaylistData, index: number) {
+    if (!session) return;
+
+    const playlistId = getPlaylistId(playlist);
+    if (!playlistId) {
+      setError("This playlist cannot be activated because the backend did not return a playlist ID.");
+      setSuccess("");
+      return;
+    }
+
+    const operationId = `activate:${playlistId}`;
+    setActionId(operationId);
+    setError("");
+    setSuccess("");
+
+    try {
+      await activatePlaylist(playlistId, session.mac_address, session.device_key);
+      setSuccess(`${getPlaylistName(playlist, index)} is now active.`);
+      await loadPlaylists(false);
+    } catch (err: unknown) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || "Failed to activate playlist. Please try again.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleDelete(playlist: PlaylistData, index: number) {
+    if (!session) return;
+
+    const playlistId = getPlaylistId(playlist);
+    if (!playlistId) {
+      setError("This playlist cannot be deleted because the backend did not return a playlist ID.");
+      setSuccess("");
+      return;
+    }
+
+    const playlistName = getPlaylistName(playlist, index);
+    const confirmed = window.confirm(`Delete "${playlistName}"?`);
+    if (!confirmed) return;
+
+    const operationId = `delete:${playlistId}`;
+    setActionId(operationId);
+    setError("");
+    setSuccess("");
+
+    try {
+      await deletePlaylist(playlistId, session.mac_address, session.device_key);
+      setSuccess("Playlist deleted successfully.");
+
+      if (String(editingPlaylistId) === String(playlistId)) {
+        setMode("add");
+        setEditingPlaylistId(null);
+        setForm(createEmptyForm(form.type));
+      }
+
+      await loadPlaylists(false);
+    } catch (err: unknown) {
+      const apiErr = err as ApiError;
+      setError(apiErr.message || "Failed to delete playlist. Please try again.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
   if (!session) return null;
 
   return (
     <SectionWrapper
-      title="Manage Playlist"
-      subtitle="Add your own M3U URL or Xtream Codes details and manage them from the website."
+      title="Manage Playlists"
+      subtitle="Add, edit, and choose the active playlist for this device."
     >
-      <div className="mx-auto max-w-3xl space-y-6">
-        {playlistLoading ? (
-          <Card>
-            <div className="flex items-center gap-3">
-              <Spinner size="sm" />
-              <p className="text-sm text-muted">Loading current playlists...</p>
-            </div>
-          </Card>
-        ) : playlistError ? (
-          <ErrorMessage message={playlistError} />
-        ) : playlists.length > 0 ? (
-          <Card>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-white">Saved Playlists</h3>
-                <p className="mt-1 text-xs text-muted">
-                  If your backend returns more than one saved playlist, each type is shown here.
-                </p>
-              </div>
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {playlists.length} saved
-              </span>
-            </div>
+      <div className="mx-auto max-w-5xl space-y-6">
+        {success && (
+          <Toast message={success} type="success" onClose={() => setSuccess("")} />
+        )}
 
-            <div className="mt-4 grid gap-3">
-              {playlists.map((playlist, index) => (
-                <div
-                  key={playlist.id ?? `${playlist.type}-${index}`}
-                  className="rounded-xl border border-border bg-background/70 p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {playlist.type?.toUpperCase() ?? "Playlist"}
-                      </p>
-                      <p className="mt-1 text-xs text-muted">
-                        {playlist.type === activeTab
-                          ? "Currently selected in the editor below."
-                          : "Saved on this device."}
-                      </p>
-                    </div>
-                    {playlist.type && (
-                      <button
-                        type="button"
-onClick={() => switchTab(playlist.type!)}                        className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-white"
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {playlist.type === "m3u" && playlist.m3u_url && (
-                      <div className="flex items-start justify-between gap-2 rounded-lg bg-surface px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted">Playlist URL</p>
-                          <p className="text-sm text-white break-all">{playlist.m3u_url}</p>
-                        </div>
-                        <CopyButton value={playlist.m3u_url} label="URL" className="mt-3 shrink-0" />
-                      </div>
-                    )}
-
-                    {playlist.type === "xtream" && (
-                      <>
-                        {playlist.xtream_username && (
-                          <div className="flex items-center justify-between gap-2 rounded-lg bg-surface px-3 py-2">
-                            <div>
-                              <p className="text-xs text-muted">Username</p>
-                              <p className="text-sm text-white">{playlist.xtream_username}</p>
-                            </div>
-                            <CopyButton value={playlist.xtream_username} label="Username" />
-                          </div>
-                        )}
-                        {playlist.xtream_base_url && (
-                          <div className="flex items-start justify-between gap-2 rounded-lg bg-surface px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-xs text-muted">Server</p>
-                              <p className="text-sm text-white break-all">{playlist.xtream_base_url}</p>
-                            </div>
-                            <CopyButton value={playlist.xtream_base_url} label="Server" className="mt-3 shrink-0" />
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        ) : (
-          <Card>
-            <div className="flex flex-col items-center gap-3 py-2 text-center">
-              <svg className="h-8 w-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
-              </svg>
-              <p className="text-sm font-medium text-white">No playlist added yet</p>
-              <p className="text-xs text-muted">Use the form below to add your first playlist.</p>
-            </div>
-          </Card>
+        {error && (
+          <Toast message={error} type="error" onClose={() => setError("")} />
         )}
 
         <Card>
-          <div className="mb-5 rounded-xl border border-primary/20 bg-primary/10 p-4">
-            <h3 className="text-sm font-semibold text-white">Add your own playlist</h3>
-            <p className="mt-2 text-sm leading-7 text-muted">
-              Choose the format provided by your playlist source. You can save an M3U URL or Xtream Codes credentials.
-            </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Saved Playlists</h3>
+              <p className="mt-1 text-sm text-muted">
+                {playlists.length} saved
+                {activePlaylist ? `, ${getPlaylistName(activePlaylist)} active` : ""}
+              </p>
+            </div>
+            <Button onClick={() => startAdd()} className="w-full sm:w-auto">
+              Add New
+            </Button>
           </div>
 
-          <div className="mb-6 flex rounded-xl bg-background p-1">
-            <button
-              type="button"
-              onClick={() => switchTab("m3u")}
-              className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "m3u" ? "bg-primary text-white" : "text-muted hover:text-white"
-              }`}
-            >
-              M3U Playlist
-            </button>
-            <button
-              type="button"
-              onClick={() => switchTab("xtream")}
-              className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "xtream" ? "bg-primary text-white" : "text-muted hover:text-white"
-              }`}
-            >
-              Xtream Codes
-            </button>
+          <div className="mt-5">
+            {playlistLoading ? (
+              <div className="flex items-center gap-3">
+                <Spinner size="sm" />
+                <p className="text-sm text-muted">Loading playlists...</p>
+              </div>
+            ) : playlistError ? (
+              <ErrorMessage message={playlistError} onRetry={() => void loadPlaylists(true)} />
+            ) : playlists.length > 0 ? (
+              <div className="grid gap-4">
+                {playlists.map((playlist, index) => {
+                  const playlistId = getPlaylistId(playlist);
+                  const isActive = isActivePlaylist(playlist);
+                  const name = getPlaylistName(playlist, index);
+                  const type = playlist.type?.toUpperCase() ?? "Playlist";
+                  const activateActionId = `activate:${playlistId}`;
+                  const deleteActionId = `delete:${playlistId}`;
+
+                  return (
+                    <div
+                      key={playlistId ?? `${playlist.type ?? "playlist"}-${index}`}
+                      className={`rounded-xl border bg-background/70 p-4 ${
+                        isActive ? "border-primary/70 ring-1 ring-primary/30" : "border-border"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-semibold text-white break-all">
+                              {name}
+                            </h4>
+                            <span className="rounded-full bg-surface-light px-2.5 py-0.5 text-xs font-semibold text-muted">
+                              {type}
+                            </span>
+                            {isActive && (
+                              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-muted">
+                            Last updated: {formatDate(getLastUpdated(playlist))}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEdit(playlist, index)}
+                            disabled={!playlistId || !!actionId || saving}
+                            className={actionButtonClass}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleActivate(playlist, index)}
+                            disabled={!playlistId || isActive || !!actionId || saving}
+                            className={actionButtonClass}
+                          >
+                            {actionId === activateActionId ? "Activating..." : "Set Active"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(playlist, index)}
+                            disabled={!playlistId || !!actionId || saving}
+                            className={dangerButtonClass}
+                          >
+                            {actionId === deleteActionId ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {playlist.type === "m3u" && playlist.m3u_url && (
+                          <div className="rounded-lg bg-surface px-3 py-2 sm:col-span-2">
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted">
+                              M3U URL
+                            </p>
+                            <div className="mt-1 flex items-start gap-2">
+                              <p className="min-w-0 flex-1 break-all text-sm font-semibold text-white">
+                                {playlist.m3u_url}
+                              </p>
+                              <CopyButton value={playlist.m3u_url} label="URL" className="shrink-0" />
+                            </div>
+                          </div>
+                        )}
+
+                        {playlist.type === "xtream" && (
+                          <>
+                            {playlist.xtream_username && (
+                              <PlaylistDetail
+                                label="Username"
+                                value={playlist.xtream_username}
+                                copyLabel="Username"
+                              />
+                            )}
+                            {playlist.xtream_base_url && (
+                              <PlaylistDetail
+                                label="Server"
+                                value={playlist.xtream_base_url}
+                                copyLabel="Server"
+                              />
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-background/60 px-4 py-8 text-center">
+                <p className="text-sm font-semibold text-white">No playlists saved yet</p>
+                <p className="mt-1 text-xs text-muted">Add the first playlist below.</p>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card id="playlist-form">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">
+                {mode === "edit" ? "Edit Playlist" : "Add New Playlist"}
+              </h3>
+              <p className="mt-1 text-sm text-muted">
+                {mode === "edit" ? "Updating a saved playlist." : "This creates a separate playlist entry."}
+              </p>
+            </div>
+            {mode === "edit" && (
+              <Button variant="outline" onClick={() => startAdd()} className="w-full sm:w-auto">
+                Add New
+              </Button>
+            )}
           </div>
 
           <form onSubmit={handleSave} className="flex flex-col gap-5">
-            {activeTab === "m3u" ? (
+            <div>
+              <Input
+                label="Playlist Name"
+                name="playlistName"
+                placeholder="Main IPTV"
+                value={form.name}
+                onChange={(e) => updateFormField("name", e.target.value)}
+              />
+              {fieldErrors.name && (
+                <p className="mt-1 text-xs text-red-400">{fieldErrors.name}</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-background p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setForm((previous) => ({ ...previous, type: "m3u" }));
+                  setFieldErrors({});
+                }}
+                className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  form.type === "m3u" ? "bg-primary text-white" : "text-muted hover:text-white"
+                }`}
+              >
+                M3U
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm((previous) => ({ ...previous, type: "xtream" }));
+                  setFieldErrors({});
+                }}
+                className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  form.type === "xtream" ? "bg-primary text-white" : "text-muted hover:text-white"
+                }`}
+              >
+                Xtream
+              </button>
+            </div>
+
+            {form.type === "m3u" ? (
               <div>
                 <Input
-                  label="Playlist URL"
+                  label="M3U URL"
                   name="m3uUrl"
-                  placeholder="http://example.com/playlist.m3u"
-                  value={m3uUrl}
-                  onChange={(e) => {
-                    setM3uUrl(e.target.value);
-                    setFieldErrors((previous) => ({ ...previous, m3uUrl: "" }));
-                  }}
+                  placeholder="https://example.com/playlist.m3u"
+                  value={form.m3uUrl}
+                  onChange={(e) => updateFormField("m3uUrl", e.target.value)}
                 />
-                <p className="mt-2 text-xs leading-6 text-muted">
-                  Paste the direct M3U or M3U8 playlist URL supplied by your provider.
-                </p>
                 {fieldErrors.m3uUrl && (
                   <p className="mt-1 text-xs text-red-400">{fieldErrors.m3uUrl}</p>
                 )}
@@ -323,18 +571,25 @@ onClick={() => switchTab(playlist.type!)}                        className="roun
               <>
                 <div>
                   <Input
-                    label="Username"
-                    name="xtreamUsername"
-                    placeholder="your_username"
-                    value={xtreamUsername}
-                    onChange={(e) => {
-                      setXtreamUsername(e.target.value);
-                      setFieldErrors((previous) => ({ ...previous, xtreamUsername: "" }));
-                    }}
+                    label="Xtream Server URL"
+                    name="xtreamBaseUrl"
+                    placeholder="https://example.com:8080"
+                    value={form.xtreamBaseUrl}
+                    onChange={(e) => updateFormField("xtreamBaseUrl", e.target.value)}
                   />
-                  <p className="mt-2 text-xs leading-6 text-muted">
-                    Enter the Xtream username exactly as provided.
-                  </p>
+                  {fieldErrors.xtreamBaseUrl && (
+                    <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamBaseUrl}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Input
+                    label="Xtream Username"
+                    name="xtreamUsername"
+                    placeholder="username"
+                    value={form.xtreamUsername}
+                    onChange={(e) => updateFormField("xtreamUsername", e.target.value)}
+                  />
                   {fieldErrors.xtreamUsername && (
                     <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamUsername}</p>
                   )}
@@ -342,69 +597,30 @@ onClick={() => switchTab(playlist.type!)}                        className="roun
 
                 <div>
                   <Input
-                    label="Password"
+                    label="Xtream Password"
                     name="xtreamPassword"
                     type="password"
-                    placeholder="your_password"
-                    value={xtreamPassword}
-                    onChange={(e) => {
-                      setXtreamPassword(e.target.value);
-                      setFieldErrors((previous) => ({ ...previous, xtreamPassword: "" }));
-                    }}
+                    placeholder="password"
+                    value={form.xtreamPassword}
+                    onChange={(e) => updateFormField("xtreamPassword", e.target.value)}
                   />
-                  <p className="mt-2 text-xs leading-6 text-muted">
-                    Passwords are only used to store the playlist details you choose to save.
-                  </p>
                   {fieldErrors.xtreamPassword && (
                     <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamPassword}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Input
-                    label="Server URL"
-                    name="xtreamServer"
-                    placeholder="http://example.com:8080"
-                    value={xtreamServer}
-                    onChange={(e) => {
-                      setXtreamServer(e.target.value);
-                      setFieldErrors((previous) => ({ ...previous, xtreamServer: "" }));
-                    }}
-                  />
-                  <p className="mt-2 text-xs leading-6 text-muted">
-                    Include the full server address, for example <span className="text-white">http://example.com:8080</span>.
-                  </p>
-                  {fieldErrors.xtreamServer && (
-                    <p className="mt-1 text-xs text-red-400">{fieldErrors.xtreamServer}</p>
                   )}
                 </div>
               </>
             )}
 
-            {success && (
-              <Toast message={success} type="success" onClose={() => setSuccess("")} />
-            )}
-
-            {error && (
-              <Toast message={error} type="error" onClose={() => setError("")} />
-            )}
-
-            <div className="rounded-xl border border-border bg-background/60 px-4 py-3 text-sm text-muted">
-              {hasExistingOfType
-                ? `You already have a saved ${activeTab.toUpperCase()} playlist. Saving this form will update it.`
-                : `No ${activeTab.toUpperCase()} playlist is saved yet for this device.`}
-            </div>
-
-            <Button type="submit" disabled={saving} className="w-full py-4">
+            <Button type="submit" disabled={saving || !!actionId} className="w-full py-4">
               {saving ? (
                 <span className="flex items-center justify-center gap-2">
                   <Spinner size="sm" className="text-white" />
                   Saving...
                 </span>
-              ) : hasExistingOfType ? (
+              ) : mode === "edit" ? (
                 "Update Playlist"
               ) : (
-                "Save Playlist"
+                "Add Playlist"
               )}
             </Button>
           </form>
@@ -415,6 +631,30 @@ onClick={() => switchTab(playlist.type!)}                        className="roun
         </Button>
       </div>
     </SectionWrapper>
+  );
+}
+
+function PlaylistDetail({
+  label,
+  value,
+  copyLabel,
+}: {
+  label: string;
+  value: string;
+  copyLabel: string;
+}) {
+  return (
+    <div className="rounded-lg bg-surface px-3 py-2">
+      <p className="text-xs font-medium uppercase tracking-wider text-muted">
+        {label}
+      </p>
+      <div className="mt-1 flex items-start gap-2">
+        <p className="min-w-0 flex-1 break-all text-sm font-semibold text-white">
+          {value}
+        </p>
+        <CopyButton value={value} label={copyLabel} className="shrink-0" />
+      </div>
+    </div>
   );
 }
 

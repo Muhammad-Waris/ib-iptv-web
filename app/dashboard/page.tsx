@@ -9,12 +9,15 @@ import ErrorMessage from "@/components/error-message";
 import AuthGuard from "@/components/auth-guard";
 import CopyButton from "@/components/copy-button";
 import { useAuth } from "@/hooks/useAuth";
-import { getDeviceStatus, getPlaylist } from "@/lib/api";
+import { getDeviceStatus, getPlaylists, isActivePlaylist } from "@/lib/api";
 import type { DeviceStatus, PlaylistData, ApiError } from "@/types";
 
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+
+  return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -26,11 +29,28 @@ function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function getPlaylistName(playlist: PlaylistData): string {
+  return (
+    playlist.name ??
+    playlist.title ??
+    playlist.playlist_name ??
+    `${playlist.type?.toUpperCase() ?? "Playlist"} Playlist`
+  );
+}
+
+function getLastUpdated(playlist: PlaylistData): string | undefined {
+  return playlist.updated_at ?? playlist.last_updated ?? playlist.created_at;
+}
+
+function formatPlaylistCount(count: number): string {
+  return `${count} saved`;
+}
+
 function DashboardContent() {
   const { session, logout } = useAuth(true);
 
   const [status, setStatus] = useState<DeviceStatus | null>(null);
-  const [playlist, setPlaylist] = useState<PlaylistData | null>(null);
+  const [playlists, setPlaylists] = useState<PlaylistData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,10 +60,10 @@ function DashboardContent() {
     try {
       const [deviceStatus, playlistData] = await Promise.all([
         getDeviceStatus(mac),
-        getPlaylist(mac).catch(() => null),
+        getPlaylists(mac).catch(() => []),
       ]);
       setStatus(deviceStatus);
-      setPlaylist(playlistData);
+      setPlaylists(playlistData);
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       setError(apiErr.message || "Failed to load device status.");
@@ -61,7 +81,9 @@ function DashboardContent() {
   if (!session) return null;
 
   const isExpired = status && !status.is_active;
-  const hasPlaylist = playlist && playlist.type;
+  const activePlaylist = playlists.find(isActivePlaylist) ?? null;
+  const playlistCount = playlists.length;
+  const hasActivePlaylist = Boolean(activePlaylist?.type);
 
   return (
     <SectionWrapper title="Dashboard" subtitle={`Device — ${session.mac_address}`}>
@@ -121,6 +143,7 @@ function DashboardContent() {
                   />
                   <InfoRow label="Plan" value={capitalize(status.plan)} />
                   <InfoRow label="Expires" value={formatDate(status.expires_at)} />
+                  <InfoRow label="Playlists" value={formatPlaylistCount(playlistCount)} />
                   <InfoRow
                     label="Days Remaining"
                     value={
@@ -138,55 +161,67 @@ function DashboardContent() {
             </Card>
 
             {/* Current Playlist */}
-            {hasPlaylist ? (
+            {hasActivePlaylist && activePlaylist ? (
               <Card>
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">
-                    Current Playlist
-                  </h3>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                    {playlist.type!.toUpperCase()}
-                  </span>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      Active Playlist
+                    </h3>
+                    <p className="mt-1 text-sm text-muted">
+                      {getPlaylistName(activePlaylist)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                      Active
+                    </span>
+                    <span className="rounded-full bg-surface-light px-2.5 py-0.5 text-xs font-semibold text-muted">
+                      {activePlaylist.type!.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {playlist.type === "m3u" && playlist.m3u_url && (
+                  <InfoRow label="Playlist Count" value={formatPlaylistCount(playlistCount)} />
+                  <InfoRow label="Last Updated" value={formatDate(getLastUpdated(activePlaylist))} />
+                  {activePlaylist.type === "m3u" && activePlaylist.m3u_url && (
                     <div className="flex flex-col gap-1 sm:col-span-2">
                       <span className="text-xs font-medium uppercase tracking-wider text-muted">
                         Playlist URL
                       </span>
                       <div className="flex items-start gap-2">
                         <span className="text-sm font-semibold text-white break-all">
-                          {playlist.m3u_url}
+                          {activePlaylist.m3u_url}
                         </span>
-                        <CopyButton value={playlist.m3u_url} label="URL" className="shrink-0" />
+                        <CopyButton value={activePlaylist.m3u_url} label="URL" className="shrink-0" />
                       </div>
                     </div>
                   )}
-                  {playlist.type === "xtream" && (
+                  {activePlaylist.type === "xtream" && (
                     <>
-                      {playlist.xtream_username && (
+                      {activePlaylist.xtream_username && (
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-medium uppercase tracking-wider text-muted">
                             Username
                           </span>
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white">
-                              {playlist.xtream_username}
+                              {activePlaylist.xtream_username}
                             </span>
-                            <CopyButton value={playlist.xtream_username} label="Username" />
+                            <CopyButton value={activePlaylist.xtream_username} label="Username" />
                           </div>
                         </div>
                       )}
-                      {playlist.xtream_base_url && (
+                      {activePlaylist.xtream_base_url && (
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-medium uppercase tracking-wider text-muted">
                             Server
                           </span>
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white break-all">
-                              {playlist.xtream_base_url}
+                              {activePlaylist.xtream_base_url}
                             </span>
-                            <CopyButton value={playlist.xtream_base_url} label="Server" className="shrink-0" />
+                            <CopyButton value={activePlaylist.xtream_base_url} label="Server" className="shrink-0" />
                           </div>
                         </div>
                       )}
@@ -195,7 +230,23 @@ function DashboardContent() {
                 </div>
                 <div className="mt-4 border-t border-border pt-4">
                   <Button href="/manage-playlist" variant="outline" className="text-xs">
-                    Edit Playlist
+                    Manage Playlists
+                  </Button>
+                </div>
+              </Card>
+            ) : playlistCount > 0 ? (
+              <Card>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      No Active Playlist Selected
+                    </h3>
+                    <p className="mt-1 text-sm text-muted">
+                      {formatPlaylistCount(playlistCount)}
+                    </p>
+                  </div>
+                  <Button href="/manage-playlist" className="text-xs">
+                    Manage Playlists
                   </Button>
                 </div>
               </Card>
@@ -225,7 +276,7 @@ function DashboardContent() {
         {/* Quick Actions */}
         <div className="flex flex-col gap-4 sm:flex-row">
           <Button href="/manage-playlist" className="flex-1 py-4">
-            {hasPlaylist ? "Edit Playlist" : "Add Playlist"}
+            {playlistCount > 0 ? "Manage Playlists" : "Add Playlist"}
           </Button>
           {isExpired && (
             <Button variant="secondary" href="/checkout?plan=yearly" className="flex-1 py-4">

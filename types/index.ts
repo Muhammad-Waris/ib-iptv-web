@@ -17,14 +17,25 @@ export interface DeviceStatus {
 export type PlaylistType = "m3u" | "xtream";
 
 export interface PlaylistData {
-  id?: string;
-  device_id?: string;
+  id?: string | number;
+  _id?: string | number;
+  playlist_id?: string | number;
+  device_id?: string | number;
+  name?: string;
+  title?: string;
+  playlist_name?: string;
   type?: PlaylistType;
+  is_active?: boolean;
+  active?: boolean;
+  is_default?: boolean;
+  default?: boolean;
   m3u_url?: string;
   xtream_username?: string;
   xtream_password?: string;
   xtream_base_url?: string;
   created_at?: string;
+  updated_at?: string;
+  last_updated?: string;
 }
 
 export interface ApiError {
@@ -35,9 +46,10 @@ export interface ApiError {
 // ─── Playlist Payloads ───────────────────────────────────────────────────────
 
 export type PlaylistPayload =
-  | { type: "m3u"; m3u_url: string }
+  | { type: "m3u"; name: string; m3u_url: string }
   | {
       type: "xtream";
+      name: string;
       xtream_username: string;
       xtream_password: string;
       xtream_base_url: string;
