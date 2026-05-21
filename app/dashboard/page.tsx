@@ -10,6 +10,10 @@ import AuthGuard from "@/components/auth-guard";
 import CopyButton from "@/components/copy-button";
 import { useAuth } from "@/hooks/useAuth";
 import { getDeviceStatus, getPlaylists, isActivePlaylist } from "@/lib/api";
+import {
+  PLAYLISTS_CHANGED_EVENT,
+  PLAYLISTS_CHANGED_STORAGE_KEY,
+} from "@/lib/playlist-events";
 import type { DeviceStatus, PlaylistData, ApiError } from "@/types";
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -60,7 +64,7 @@ function DashboardContent() {
     try {
       const [deviceStatus, playlistData] = await Promise.all([
         getDeviceStatus(mac),
-        getPlaylists(mac).catch(() => []),
+        getPlaylists(mac, session?.device_key).catch(() => []),
       ]);
       setStatus(deviceStatus);
       setPlaylists(playlistData);
@@ -70,12 +74,35 @@ function DashboardContent() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.device_key]);
 
   useEffect(() => {
     if (session) {
       fetchData(session.mac_address);
     }
+  }, [session, fetchData]);
+
+  useEffect(() => {
+    if (!session) return;
+    const macAddress = session.mac_address;
+
+    function refreshDashboard() {
+      void fetchData(macAddress);
+    }
+
+    function refreshDashboardFromStorage(event: StorageEvent) {
+      if (event.key === PLAYLISTS_CHANGED_STORAGE_KEY) {
+        refreshDashboard();
+      }
+    }
+
+    window.addEventListener(PLAYLISTS_CHANGED_EVENT, refreshDashboard);
+    window.addEventListener("storage", refreshDashboardFromStorage);
+
+    return () => {
+      window.removeEventListener(PLAYLISTS_CHANGED_EVENT, refreshDashboard);
+      window.removeEventListener("storage", refreshDashboardFromStorage);
+    };
   }, [session, fetchData]);
 
   if (!session) return null;

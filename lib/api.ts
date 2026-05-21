@@ -77,37 +77,12 @@ async function request<T>(
   return parsed;
 }
 
-function isMissingRoute(err: unknown): boolean {
-  const apiErr = err as Partial<ApiError>;
-  return apiErr.statusCode === 404 || apiErr.statusCode === 405;
-}
-
-async function requestWithRouteFallbacks<T>(
-  candidates: Array<{ path: string; options: RequestInit }>
-): Promise<T> {
-  let routeErr: unknown;
-
-  for (const candidate of candidates) {
-    try {
-      return await request<T>(candidate.path, candidate.options);
-    } catch (err: unknown) {
-      if (!isMissingRoute(err)) throw err;
-      routeErr = err;
-    }
-  }
-
-  throw routeErr;
-}
-
-function playlistBody(
-  playlist_id: PlaylistId,
+function playlistOwnershipBody(
   mac_address: string,
   device_key: string,
   extra?: Record<string, unknown>
 ) {
   return JSON.stringify({
-    id: playlist_id,
-    playlist_id,
     mac_address,
     device_key,
     ...extra,
@@ -183,74 +158,75 @@ export function addPlaylist(
 
 /** Update an existing playlist */
 export async function updatePlaylist(
-  playlist_id: PlaylistId,
+  playlistId: PlaylistId,
   mac_address: string,
   device_key: string,
   playlist: PlaylistPayload
 ) {
-  const body = playlistBody(playlist_id, mac_address, device_key, playlist);
-
-  return requestWithRouteFallbacks<Record<string, unknown>>([
-    { path: "/playlist/update", options: { method: "POST", body } },
-    { path: "/playlist/update", options: { method: "PUT", body } },
+  return request<Record<string, unknown>>(
+    `/playlist/${encodeURIComponent(String(playlistId))}`,
     {
-      path: `/playlist/${encodeURIComponent(String(playlist_id))}`,
-      options: { method: "PUT", body },
-    },
-  ]);
+      method: "PUT",
+      body: playlistOwnershipBody(mac_address, device_key, playlist),
+    }
+  );
 }
 
 /** Delete an existing playlist */
 export async function deletePlaylist(
-  playlist_id: PlaylistId,
+  playlistId: PlaylistId,
   mac_address: string,
   device_key: string
 ) {
-  const body = playlistBody(playlist_id, mac_address, device_key);
-
-  return requestWithRouteFallbacks<Record<string, unknown>>([
-    { path: "/playlist/delete", options: { method: "POST", body } },
-    { path: "/playlist/delete", options: { method: "DELETE", body } },
+  return request<Record<string, unknown>>(
+    `/playlist/${encodeURIComponent(String(playlistId))}`,
     {
-      path: `/playlist/${encodeURIComponent(String(playlist_id))}`,
-      options: { method: "DELETE", body },
-    },
-  ]);
+      method: "DELETE",
+      body: playlistOwnershipBody(mac_address, device_key),
+    }
+  );
 }
 
 /** Set one playlist as the active/default playlist for a device */
 export async function activatePlaylist(
-  playlist_id: PlaylistId,
+  playlistId: PlaylistId,
   mac_address: string,
   device_key: string
 ) {
-  const body = playlistBody(playlist_id, mac_address, device_key);
-
-  return requestWithRouteFallbacks<Record<string, unknown>>([
-    { path: "/playlist/activate", options: { method: "POST", body } },
+  return request<Record<string, unknown>>(
+    `/playlist/${encodeURIComponent(String(playlistId))}/activate`,
     {
-      path: `/playlist/${encodeURIComponent(String(playlist_id))}/activate`,
-      options: { method: "POST", body },
-    },
-  ]);
+      method: "POST",
+      body: playlistOwnershipBody(mac_address, device_key),
+    }
+  );
 }
 
 /** Get all playlists for a device */
-export async function getPlaylists(mac: string): Promise<PlaylistData[]> {
+export async function getPlaylists(
+  mac: string,
+  device_key?: string
+): Promise<PlaylistData[]> {
+  const params = new URLSearchParams({ mac });
+  if (device_key) {
+    params.set("device_key", device_key);
+  }
+
   const data = await request<
     | PlaylistData
     | PlaylistData[]
     | { data?: unknown; playlists?: unknown; playlist?: unknown }
     | null
-  >(
-    `/playlist?mac=${encodeURIComponent(mac)}`
-  );
+  >(`/playlist?${params.toString()}`);
   return extractPlaylists(data);
 }
 
 /** Get the active playlist, falling back to the first saved playlist */
-export async function getPlaylist(mac: string): Promise<PlaylistData | null> {
-  const playlists = await getPlaylists(mac);
+export async function getPlaylist(
+  mac: string,
+  device_key?: string
+): Promise<PlaylistData | null> {
+  const playlists = await getPlaylists(mac, device_key);
   return playlists.find(isActivePlaylist) ?? playlists[0] ?? null;
 }
 
